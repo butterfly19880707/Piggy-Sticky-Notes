@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, X, Sparkles } from 'lucide-react';
+import { Plus, Trash2, X, Sparkles, Image as ImageIcon, Camera } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -20,6 +20,7 @@ interface Note {
   x: number;
   y: number;
   timestamp: string;
+  image?: string;
 }
 
 const NOTE_COLORS = [
@@ -33,6 +34,8 @@ const NOTE_COLORS = [
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [inputValue, setInputValue] = useState('');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const [isClearing, setIsClearing] = useState(false);
 
@@ -53,8 +56,35 @@ export default function App() {
     localStorage.setItem('piggy-notes', JSON.stringify(notes));
   }, [notes]);
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setSelectedImage(reader.result as string);
+          };
+          reader.readAsDataURL(blob);
+        }
+      }
+    }
+  };
+
   const addNote = () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() && !selectedImage) return;
     const now = new Date();
     const timestamp = now.toLocaleString('en-US', {
       month: 'short',
@@ -70,9 +100,11 @@ export default function App() {
       x: Math.random() * 40 - 20, // Random slight offset
       y: Math.random() * 40 - 20,
       timestamp,
+      image: selectedImage || undefined,
     };
     setNotes([newNote, ...notes]);
     setInputValue('');
+    setSelectedImage(null);
   };
 
   const deleteNote = (id: string) => {
@@ -80,12 +112,13 @@ export default function App() {
   };
 
   const clearAllNotes = () => {
-    if (notes.length === 0 && !inputValue) return;
+    if (notes.length === 0 && !inputValue && !selectedImage) return;
     
     // Visual feedback instead of blocking confirm
     setIsClearing(true);
     setNotes([]);
     setInputValue('');
+    setSelectedImage(null);
     
     setTimeout(() => {
       setIsClearing(false);
@@ -145,21 +178,56 @@ export default function App() {
         </motion.div>
 
         {/* Input Area */}
-        <div className="mt-12 w-full max-w-md flex gap-2">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addNote()}
-            placeholder="Write a lucky memo..."
-            className="flex-1 px-6 py-4 bg-white border-2 border-amber-200 rounded-2xl shadow-sm focus:outline-none focus:border-amber-500 text-stone-700 placeholder:text-stone-400"
-          />
-          <button
-            onClick={addNote}
-            className="p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl shadow-lg transition-colors flex items-center justify-center"
-          >
-            <Plus size={24} />
-          </button>
+        <div className="mt-12 w-full max-w-md flex flex-col gap-4">
+          {selectedImage && (
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="relative w-full aspect-video rounded-2xl overflow-hidden border-2 border-amber-200 bg-white group"
+            >
+              <img src={selectedImage} className="w-full h-full object-cover" alt="Selected" />
+              <button 
+                onClick={() => setSelectedImage(null)}
+                className="absolute top-2 right-2 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </motion.div>
+          )}
+          
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addNote()}
+                onPaste={handlePaste}
+                placeholder="Write a memo or paste image..."
+                className="w-full px-6 py-4 bg-white border-2 border-amber-200 rounded-2xl shadow-sm focus:outline-none focus:border-amber-500 text-stone-700 placeholder:text-stone-400 pr-12"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-stone-400 hover:text-amber-500 transition-colors"
+                title="Upload image"
+              >
+                <ImageIcon size={20} />
+              </button>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImageUpload} 
+                className="hidden" 
+                accept="image/*"
+              />
+            </div>
+            <button
+              onClick={addNote}
+              className="p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl shadow-lg transition-colors flex items-center justify-center"
+            >
+              <Plus size={24} />
+            </button>
+          </div>
         </div>
 
         {/* Notes Grid */}
@@ -181,9 +249,16 @@ export default function App() {
                 {/* Pin effect */}
                 <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-amber-600 rounded-full shadow-sm border-2 border-amber-700" />
                 
-                <p className="text-stone-800 font-medium leading-relaxed break-words">
-                  {note.text}
-                </p>
+                <div className="flex flex-col gap-3">
+                  {note.image && (
+                    <div className="w-full rounded-lg overflow-hidden border border-black/5">
+                      <img src={note.image} className="w-full h-auto object-cover max-h-48" alt="Note attachment" />
+                    </div>
+                  )}
+                  <p className="text-stone-800 font-medium leading-relaxed break-words">
+                    {note.text}
+                  </p>
+                </div>
 
                 <div className="flex justify-between items-center mt-4">
                   <span className="text-[10px] text-stone-500 font-mono opacity-70">
